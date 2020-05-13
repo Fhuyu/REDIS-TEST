@@ -21,17 +21,60 @@ const app = express();
 app.use(bodyParser.urlencoded({ extended: false }));
 app.use(bodyParser.json());
 
+let battles = null
+let fetching = false
+let lastFecthTime = null
+let offset = [0, 50, 100, 150, 200, 250, 300, 350, 400, 450, 500, 550, 600, 650, 700, 750, 800, 850, 900, 950] //, 200, 250, 300, 350, 400, 450, 500, 550, 600, 650, 700, 750, 800, 850, 900, 950
+
 setInterval( async() => { 
     console.log("Hello"); 
-    let url = `https://gameinfo.albiononline.com/api/gameinfo/battles?limit=50&sort=recent&offset=0`
 
-    const starShipInfo = await axios.get(url, { timeout: 60000 })
-    const starShipInfoData = starShipInfo.data;
+    lastFecthTime = battles ? Math.abs(new Date() - new Date(battles.headers.date)) : null
+    let minutes = lastFecthTime ? Math.floor((lastFecthTime/1000)/60) : null
 
-    //add data to Redis
-    redis_client.setex('battles', 300, JSON.stringify(starShipInfoData)); // 5m
-    console.log('cache set interval')
-}, 6000);
+    console.log('minutes -----------', minutes)
+    console.log('fetching---', fetching)
+
+    if ((minutes === null && !fetching) || (minutes >= 1 && !fetching)) {
+
+      fetching = true
+      
+      let fetchDone = 0
+      try {
+      offset.forEach( async (value) => {
+        console.log(value)
+        let url = `https://gameinfo.albiononline.com/api/gameinfo/battles?limit=50&sort=recent&offset=${value}`
+        console.log(fetching)
+
+        battles = await axios.get(url, { timeout: 300000 }) // battles = last fetched. Fix ?
+        console.log('date :', new Date())
+        console.log(new Date(battles.headers.date))
+
+        let battlesData = battles.data;
+        fetchDone += 1
+        //add data to Redis
+        redis_client.setex(`battle-${value}`, 1200, JSON.stringify(battlesData)); // 20m
+        console.log('cache set interval', value)
+        console.log('fetchdone ------', fetchDone)
+          if (fetchDone === offset.length) {
+            fetching = false
+          }
+          console.log(fetching)
+      })
+    } catch {
+      fetchDone += 1
+      if (fetchDone === offset.length) {
+        fetching = false
+      }
+      console.log(fetching)
+
+    }
+      
+
+    } else {
+      console.log('skip')
+    }
+}, 10000);
 
 //Middleware Function to Check Cache
 checkCache = (req, res, next) => {
